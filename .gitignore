@@ -1,0 +1,4 @@
+artifacts/**
+!artifacts/.gitkeep
+screenshots/actual/**
+.DS_Store

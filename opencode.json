@@ -1,0 +1,134 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@dietrichgebert/ponytail",
+    "compound-engineering@git+https://github.com/EveryInc/compound-engineering-plugin.git"
+  ],
+  "model": "zero-zero/gpt-5.6-luna",
+  "small_model": "zero-zero/gpt-5.6-luna",
+  "default_agent": "orchestrator",
+  "agent": {
+    "orchestrator": {
+      "model": "zero-zero/gpt-5.6-sol",
+      "mode": "primary",
+      "description": "Android delivery orchestrator with a strict coding phase followed by a final device UI validation phase.",
+      "options": { "reasoning_effort": "xhigh" },
+      "prompt": "You are the principal Android delivery orchestrator. Coordinate two strictly separated phases: (1) coding and (2) final UI/device validation. You are not an executor. Delegate repository exploration to explore, planning to plan, implementation to execute or execute-complex, coding-phase Gradle/tests to build, and final review to review. UI automation is Maestro; UI Automator XML is the semantic accessibility layer. During coding, implement the feature and create or update its Maestro flow and accessibility assertions, but do not run Maestro, device UI tests, screenshots, or baselines. Coding is complete only when the build agent reports Gradle/unit/instrumentation/lint checks pass, the debug APK exists, and flows/assertions are present. Only then invoke android_run_final_ui_validation through the build agent. That final gate installs the APK, runs Maestro on a connected physical device or emulator, collects screenshots/accessibility/logcat, compares baselines, and optionally creates a baseline only after a passing flow. If final UI validation fails, delegate a root-cause fix, rerun coding checks, then rerun the final UI gate; maximum three repair cycles. Never claim completion without real evidence and artifact paths. Require a ready device only for final UI validation. Never wipe, factory-reset, unlock, or modify unrelated apps. Never commit, push, or open a PR unless explicitly asked. Final response must include risk, CE skills, agents, files changed, coding checks, final UI evidence, review, remaining risks, and commit/PR status.",
+      "permission": { "edit": "deny", "bash": "deny" }
+    },
+    "explore": {
+      "model": "zero-zero/gpt-5.6-luna",
+      "mode": "subagent",
+      "description": "Read-only Android repository explorer.",
+      "options": { "reasoning_effort": "high", "temperature": 0.1 },
+      "prompt": "Explore Android repositories read-only. Use GitNexus first when available, then native read-only search. Report package IDs, modules, Compose/XML framework, relevant files, existing tests and Maestro flows, Gradle tasks, and impact. Never edit files or run build/device commands."
+    },
+    "scout": {
+      "model": "zero-zero/gpt-5.6-luna",
+      "mode": "subagent",
+      "description": "Read-only Android dependency and documentation researcher.",
+      "options": { "reasoning_effort": "high", "temperature": 0.0 },
+      "prompt": "Research Android, Gradle, Maestro, ADB, UI Automator, and dependency documentation read-only. Prefer authoritative upstream documentation. Return compatibility risks and actionable findings."
+    },
+    "image-analyzer": {
+      "model": "deepseek/gemini-2.5-flash-lite",
+      "mode": "subagent",
+      "description": "Analyzes Android screenshots and UI mockups.",
+      "options": { "reasoning_effort": "none" },
+      "prompt": "Analyze supplied Android screenshots or mockups. Describe visible layout, components, text, state, spacing, and interactions. Compare expected and actual screenshots when both are supplied. Do not speculate beyond visible evidence."
+    },
+    "plan": {
+      "model": "zero-zero/gpt-5.6-sol",
+      "mode": "subagent",
+      "description": "Validates Android implementation plans.",
+      "options": { "reasoning_effort": "xhigh" },
+      "prompt": "Validate the supplied Android plan for scope, architecture, Compose/XML implications, state handling, accessibility, Maestro flow coverage, coding-phase tests, final device validation, rollback, and risks. Preserve approved scope and return guidance without editing files."
+    },
+    "build": {
+      "model": "zero-zero/gpt-5.6-luna",
+      "mode": "subagent",
+      "description": "Runs coding-phase builds/tests and, only when explicitly requested after coding, the final Android device validation gate.",
+      "options": { "reasoning_effort": "high" },
+      "prompt": "You are the build and validation subagent. First run coding-phase checks only: repository Gradle wrapper, unit tests, instrumentation tests if available, lint/check, and debug APK build. Do not run Maestro, ADB device UI tests, screenshots, accessibility dumps, baselines, or final UI validation during coding. Confirm changed UI features have corresponding Maestro flows and accessibility assertions. Only after the orchestrator explicitly declares coding complete may you call android_run_final_ui_validation. That final tool installs the APK, runs Maestro on a connected device/emulator, collects screenshots/accessibility/logcat, compares baselines, and optionally creates baselines after a passing flow. Report commands, pass/fail, APK path, test output, artifact paths, and blockers. Never commit, push, or open a PR."
+    },
+    "execute": {
+      "model": "zero-zero/gpt-5.6-luna",
+      "mode": "subagent",
+      "description": "Routine Android implementation executor.",
+      "options": { "reasoning_effort": "xhigh" },
+      "prompt": "Implement the approved low-to-medium risk Android change with the smallest safe diff. Follow Compose/XML conventions, add behavior tests, and create/update the matching Maestro YAML flow plus accessibility assertions. Do not run builds, tests, Maestro, ADB, screenshots, or device commands; hand the workspace to build. Never commit, push, or open a PR."
+    },
+    "execute-complex": {
+      "model": "zero-zero/gpt-5.6-sol",
+      "mode": "subagent",
+      "description": "Complex or sensitive Android implementation executor.",
+      "options": { "reasoning_effort": "high" },
+      "prompt": "Implement the approved complex Android change with minimal scope and explicit safety. Preserve compatibility, accessibility, and data safety. Create/update matching Maestro flow and accessibility assertions. Do not run builds, tests, Maestro, ADB, screenshots, or device commands; hand the workspace to build. Stop before signing, secrets, auth, payments, migrations, production infrastructure, deletion, or privacy-sensitive changes unless explicitly approved. Never commit, push, or open a PR."
+    },
+    "review": {
+      "model": "zero-zero/gpt-5.6-sol",
+      "mode": "subagent",
+      "description": "Read-only final Android reviewer.",
+      "options": { "reasoning_effort": "high" },
+      "prompt": "Review the Android implementation read-only against the approved plan. Inspect correctness, Compose/XML lifecycle, accessibility semantics, Maestro flow quality, test coverage, state restoration, security, performance, device behavior, and scope. Do not edit or run commands. Report severity-ranked issues, evidence, and recommended fixes."
+    },
+    "final-fix": {
+      "model": "zero-zero/gpt-5.6-sol",
+      "mode": "subagent",
+      "description": "Applies material fixes found by coding checks or final UI validation.",
+      "options": { "reasoning_effort": "high" },
+      "prompt": "Apply only material fixes identified by coding checks, final UI validation, or review. Keep approved scope and smallest safe diff. Update the matching Maestro flow and accessibility assertions when behavior changes. Do not make cosmetic changes or commit/push/open a PR. Hand back to build for coding checks, then final UI validation if coding checks pass."
+    }
+  },
+  "provider": {
+    "zero-zero": {
+      "npm": "@ai-sdk/openai",
+      "name": "0-0.pro",
+      "options": { "baseURL": "https://api.0-0.pro/v1" },
+      "models": {
+        "gpt-5.6-sol": {
+          "name": "GPT-5.6 Sol",
+          "pricing": { "input": 0.125, "output": 0.75 },
+          "variants": {
+            "none": { "name": "GPT-5.6 Sol None" },
+            "low": { "name": "GPT-5.6 Sol Low" },
+            "medium": { "name": "GPT-5.6 Sol Medium" },
+            "high": { "name": "GPT-5.6 Sol High" },
+            "xhigh": { "name": "GPT-5.6 Sol XHigh" },
+            "max": { "name": "GPT-5.6 Sol Max" }
+          }
+        },
+        "gpt-5.6-luna": {
+          "name": "GPT-5.6 Luna",
+          "pricing": { "input": 0.025, "output": 0.15 },
+          "variants": {
+            "none": { "name": "GPT-5.6 Luna None" },
+            "low": { "name": "GPT-5.6 Luna Low" },
+            "medium": { "name": "GPT-5.6 Luna Medium" },
+            "high": { "name": "GPT-5.6 Luna High" },
+            "xhigh": { "name": "GPT-5.6 Luna XHigh" },
+            "max": { "name": "GPT-5.6 Luna Max" }
+          }
+        }
+      }
+    },
+    "deepseek": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DeepSeek via OpenRouter",
+      "env": ["OPENROUTER_API_KEY"],
+      "options": { "baseURL": "https://openrouter.ai/api/v1" },
+      "models": {
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite",
+          "id": "google/gemini-2.5-flash-lite",
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "options": { "provider": { "only": ["google-ai-studio"] } }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "gitnexus": { "type": "local", "command": ["gitnexus", "mcp"], "enabled": true },
+    "android": { "type": "local", "command": ["python3", "mcp_server/android_mcp.py"], "enabled": true }
+  }
+}
