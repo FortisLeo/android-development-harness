@@ -10,18 +10,21 @@ if __package__ in (None, ""):
     from mcp_server.adb_client import command, run, require_device
     from mcp_server.artifacts import accessibility, collect, screenshot
     from mcp_server.build import build, debug_apk
-    from mcp_server.config import allowed_project_path, artifact_dir, package_name
+    from mcp_server.config import project_path, state_path, package_name
     from mcp_server.maestro import baseline, create_and_run, create_flow, run_flow
+    from mcp_server.project_state import initialize as initialize_state
     from mcp_server.protocol import error, result, serve
 else:
     from .adb_client import command, run, require_device
     from .artifacts import accessibility, collect, screenshot
     from .build import build, debug_apk
-    from .config import allowed_project_path, artifact_dir, package_name
+    from .config import project_path, state_path, package_name
     from .maestro import baseline, create_and_run, create_flow, run_flow
+    from .project_state import initialize as initialize_state
     from .protocol import error, result, serve
 
 TOOLS = {
+    "android_initialize_project_state": {"description": "Create .android_harness in the Android project root with flows, screenshots, artifacts, and reports directories.", "inputSchema": {"type": "object", "properties": {"project_dir": {"type": "string"}}}},
     "android_status": {"description": "List connected Android devices.", "inputSchema": {"type": "object", "properties": {}}},
     "android_install_apk": {"description": "Install an APK on the selected device.", "inputSchema": {"type": "object", "properties": {"apk_path": {"type": "string"}}, "required": ["apk_path"]}},
     "android_launch_app": {"description": "Launch an Android package.", "inputSchema": {"type": "object", "properties": {"package": {"type": "string"}}, "required": ["package"]}},
@@ -47,12 +50,14 @@ TOOLS = {
 
 
 def dispatch(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    if name == "android_initialize_project_state":
+        return result(initialize_state(args.get("project_dir")))
     if name == "android_status":
         return result({"devices": run([command()[0], "devices", "-l"], timeout=10)})
-    if name not in {"android_compare_screenshots", "android_assert_accessibility", "android_build_project", "android_find_debug_apk", "android_create_maestro_flow"}:
+    if name not in {"android_compare_screenshots", "android_assert_accessibility", "android_build_project", "android_find_debug_apk", "android_create_maestro_flow", "android_initialize_project_state"}:
         require_device()
     if name == "android_install_apk":
-        apk = allowed_project_path(args["apk_path"], must_exist=True); return result({"output": run(command()+["install", "-r", str(apk)], timeout=180)})
+        apk = project_path(args["apk_path"], must_exist=True); return result({"output": run(command()+["install", "-r", str(apk)], timeout=180)})
     if name == "android_launch_app":
         package = package_name(args["package"]); return result({"package": package, "output": run(command()+["shell", "monkey", "-p", package, "1"])})
     if name == "android_reset_app":
@@ -69,13 +74,13 @@ def dispatch(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "android_press_back": return result({"output": run(command()+["shell", "input", "keyevent", "4"])})
     if name == "android_assert_accessibility":
         import xml.etree.ElementTree as ET
-        nodes=list(ET.parse(allowed_project_path(args["xml_path"], must_exist=True)).getroot().iter()); missing=[]
+        nodes=list(ET.parse(project_path(args["xml_path"], must_exist=True)).getroot().iter()); missing=[]
         for key, attr in (("text","text"),("content_desc","content-desc"),("resource_id","resource-id")):
             for value in args.get(key, []):
                 if value not in [node.attrib.get(attr, "") for node in nodes]: missing.append(f"{attr}={value!r}")
         return error("Missing accessibility nodes: "+", ".join(missing)) if missing else result({"pass":True,"nodes":len(nodes)})
     if name == "android_compare_screenshots":
-        expected=allowed_project_path(args["expected_path"],must_exist=True); actual=allowed_project_path(args["actual_path"],must_exist=True); same=expected.read_bytes()==actual.read_bytes()
+        expected=project_path(args["expected_path"],must_exist=True); actual=project_path(args["actual_path"],must_exist=True); same=expected.read_bytes()==actual.read_bytes()
         return result({"pass":same,"exact_match":same,"expected_bytes":expected.stat().st_size,"actual_bytes":actual.stat().st_size})
     if name == "android_run_maestro_flow": return result(run_flow(args["flow_path"],args.get("output_dir"),bool(args.get("debug",False))))
     if name == "android_create_maestro_flow": return result(create_flow(args["flow_path"],args["content"],bool(args.get("overwrite",False))))
@@ -86,7 +91,7 @@ def dispatch(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "android_run_final_ui_validation":
         project=args["project_dir"]; checks=build(project,["test","assembleDebug"])
         if not checks["pass"]: raise RuntimeError("Coding checks failed; final UI validation was not started.\n"+checks["output"])
-        apk=allowed_project_path(args["apk_path"],must_exist=True); package=package_name(args["package"]); flow=allowed_project_path(args["flow_path"],must_exist=True); out=artifact_dir(args["artifact_dir"])
+        apk=project_path(args["apk_path"],must_exist=True); package=package_name(args["package"]); flow=project_path(args["flow_path"],must_exist=True); out=state_path(args["artifact_dir"])
         run(command()+["install","-r",str(apk)],timeout=180); run(command()+["shell","pm","clear",package]); run(command()+["shell","monkey","-p",package,"1"])
         maestro=run_flow(str(flow),str(out/"maestro"),True); artifacts=collect(package,str(out))
         if not maestro["pass"]: raise RuntimeError("Maestro validation failed.\n"+maestro["output"])

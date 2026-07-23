@@ -1,28 +1,65 @@
 from __future__ import annotations
+
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-ARTIFACT_ROOT = Path(os.environ.get("ANDROID_HARNESS_ARTIFACT_ROOT", ROOT / "artifacts")).expanduser().resolve()
-PROJECT_ROOT = Path(os.environ.get("ANDROID_PROJECT_ROOT", os.getcwd())).expanduser().resolve()
+CODE_ROOT = Path(__file__).resolve().parents[1]
+STATE_DIR_NAME = ".android_harness"
 
 
-def allowed_project_path(value: str, *, must_exist: bool = False) -> Path:
-    candidate = Path(value).expanduser().resolve()
-    roots = [ROOT, PROJECT_ROOT]
-    roots.extend(Path(item).expanduser().resolve() for item in os.environ.get("ANDROID_HARNESS_PROJECT_ROOTS", "").split(os.pathsep) if item)
-    if candidate != ROOT and not any(candidate == root or root in candidate.parents for root in roots):
-        raise RuntimeError("Path must be inside the harness or configured Android project root")
+def project_root(value: str | None = None, *, must_exist: bool = True) -> Path:
+    """Resolve the Android app root, never the harness source root by default."""
+    candidate = Path(value or os.environ.get("ANDROID_PROJECT_ROOT", os.getcwd())).expanduser().resolve()
+    if must_exist and not candidate.is_dir():
+        raise RuntimeError(f"Android project root not found: {candidate}")
+    if candidate == CODE_ROOT or CODE_ROOT in candidate.parents:
+        raise RuntimeError("ANDROID_PROJECT_ROOT must point to the Android app repository, not the harness source repository")
+    return candidate
+
+
+def state_root(value: str | None = None) -> Path:
+    root = project_root()
+    state = root / STATE_DIR_NAME
+    state.mkdir(parents=True, exist_ok=True)
+    for name in ("flows", "screenshots", "screenshots/baseline", "screenshots/actual", "artifacts", "reports"):
+        (state / name).mkdir(parents=True, exist_ok=True)
+    return state
+
+
+def project_path(value: str, *, must_exist: bool = False) -> Path:
+    candidate = Path(value).expanduser()
+    root = project_root()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    candidate = candidate.resolve()
+    if candidate != root and root not in candidate.parents:
+        raise RuntimeError(f"Path must be inside Android project root: {root}")
     if must_exist and not candidate.exists():
         raise RuntimeError(f"Path not found: {candidate}")
     return candidate
 
 
-def artifact_dir(value: str | None = None) -> Path:
-    candidate = Path(value or (ARTIFACT_ROOT / "latest")).expanduser().resolve()
-    if candidate != ARTIFACT_ROOT and ARTIFACT_ROOT not in candidate.parents:
-        raise RuntimeError(f"Artifact directory must be inside {ARTIFACT_ROOT}")
-    candidate.mkdir(parents=True, exist_ok=True)
+def state_path(value: str | None = None, *, must_exist: bool = False) -> Path:
+    state = state_root()
+    candidate = Path(value or "artifacts/latest").expanduser()
+    if not candidate.is_absolute():
+        candidate = state / candidate
+    candidate = candidate.resolve()
+    if candidate != state and state not in candidate.parents:
+        raise RuntimeError(f"Path must be inside {state}")
+    if must_exist and not candidate.exists():
+        raise RuntimeError(f"Path not found: {candidate}")
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+
+def flow_path(value: str) -> Path:
+    candidate = project_path(value)
+    if candidate.suffix.lower() not in {".yaml", ".yml"}:
+        raise RuntimeError("Maestro flow must be YAML")
+    if STATE_DIR_NAME not in candidate.parts:
+        candidate = state_root() / "flows" / candidate.name
+    candidate.parent.mkdir(parents=True, exist_ok=True)
     return candidate
 
 

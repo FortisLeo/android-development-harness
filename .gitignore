@@ -1,4 +1,3 @@
-artifacts/**
-!artifacts/.gitkeep
-screenshots/actual/**
-.DS_Store
+# The harness source repository does not contain runtime Android state.
+# Runtime state is created in each Android app repository at .android_harness/.
+.android_harness/
